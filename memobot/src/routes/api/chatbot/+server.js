@@ -19,12 +19,14 @@ const validateToken = async (request) => {
 	}
 
 	// Verify the user's session.
-	const { error: userError } = await supabase.auth.getUser(token);
+	const { data, error: userError } = await supabase.auth.getUser(token);
 	if (userError) {
 		return { error: { message: 'Invalid session' }, status: 403 };
 	}
 
-	return { token };
+	const user_id = data.user.id;
+
+	return { user_id };
 };
 
 // Function to create embeddings for some text
@@ -51,7 +53,7 @@ const createEmbeddings = async (message) => {
 
 // Function to match embeddings with similar embeddings in the vector database
 const matchEmbeddings = async (embedding) => {
-	const { error: matchError, data: pageSections } = await supabase.rpc('match_page_sections', {
+	const { error: matchError, data: chatHistory } = await supabase.rpc('match_chat_history', {
 		embedding,
 		match_threshold: 0.78,
 		match_count: 10,
@@ -66,16 +68,18 @@ const matchEmbeddings = async (embedding) => {
 
 	console.log(`Vector DB query successful`);
 
-	return { pageSections };
+	return { chatHistory };
 };
 
 /** @type {import('@sveltejs/kit').RequestHandler} */
 export async function POST({ request }) {
 	// Validate session token
-	const { error: tokenError, status: tokenStatus } = await validateToken(request);
+	const { user_id, error: tokenError, status: tokenStatus } = await validateToken(request);
 	if (tokenError) {
 		return json(tokenError, tokenStatus);
 	}
+
+	console.log(`/nUser ID: ${user_id}`);
 
 	// Extract message from request.
 	const { message, model } = await request.json();
@@ -94,16 +98,14 @@ export async function POST({ request }) {
 	}
 
 	// Match embeddings with similar embeddings in the vector database
-	const { error: matchError, status: matchStatus, pageSections } = await matchEmbeddings(embedding);
+	const { error: matchError, status: matchStatus, chatHistory } = await matchEmbeddings(embedding);
 	if (matchError) {
 		return json(matchError, matchStatus);
 	}
 
 	// Append matched results from database to message.
-	const message_vdb =
-		message + '\n\n Extract from latest sveltekit docs: \n\n' + JSON.stringify(pageSections);
-
-	console.log(`Sending message to OpenAI`);
+	const message_vdb = JSON.stringify(chatHistory) + '/n/n' + message;
+	console.log(`Sending message to OpenAI ${message_vdb}}`);
 
 	try {
 		// Create chat completion with OpenAI.
@@ -115,6 +117,30 @@ export async function POST({ request }) {
 		// Extract bot message from response.
 		const botMessage = completion.data.choices[0].message.content.trim();
 		console.log(`Received bot message: ${botMessage}`);
+
+		// Join the text in the requested format.
+		const fullText = `user: ${message}\n\nassistant: ${botMessage}`;
+
+		// Fetch an embedding for the new text.
+		const {
+			error: embeddingError,
+			status: embeddingStatus,
+			embedding
+		} = await createEmbeddings(fullText);
+		if (embeddingError) {
+			return json(embeddingError, embeddingStatus);
+		}
+
+		// Insert the text and embedding onto the chat_history table in Supabase.
+		const { error: insertError } = await supabase
+			.from('chat_history')
+			.insert({ user_id: user_id, content: fullText, token_count: 123, embedding });
+
+		// Handle failure to insert into the database.
+		if (insertError) {
+			console.log(insertError.message);
+			return json({ error: { message: 'Failed to insert into chat_history' } }, 500);
+		}
 
 		// Return bot message to client.
 		return json({ message: botMessage });
