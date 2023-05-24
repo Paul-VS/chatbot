@@ -29,6 +29,8 @@ GITHUB_API = 'https://api.github.com'
 
 # GitHub username, repository and folder to scrape 
 USERNAME = 'sveltejs'
+# REPO = 'svelte'
+# PATH = 'site/content/docs/'
 REPO = 'kit'
 PATH = 'documentation/docs/'
 
@@ -97,9 +99,12 @@ def download_file(path):
         logging.error(f'Failed to decode file {path}. Reason: {str(e)}')
         return None
 
+import re
+
 def split_markdown(content):
     """
-    Splits the content of a markdown file into chunks at each heading.
+    Splits the content of a markdown file into chunks at each heading and ensures
+    each chunk is less than 500 tokens.
 
     Parameters:
     content (str): The content of a markdown file.
@@ -111,22 +116,44 @@ def split_markdown(content):
         return []
 
     logging.info('Splitting markdown content into chunks')
-    soup = BeautifulSoup(markdown(content), features="html.parser")
-    chunks = []
-    current_chunk = ''
+    # Split the content at each heading using regular expressions
+    chunks = re.split(r'(^#+\s.*)', content, flags=re.MULTILINE)[1:]
 
-    for tag in soup:
-        if tag.name in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6'):
-            if current_chunk:
-                chunks.append(current_chunk)
-            current_chunk = str(tag)
-        else:
-            current_chunk += str(tag)
+    # Merge the heading with the following content
+    chunks = [heading + chunk for heading, chunk in zip(chunks[0::2], chunks[1::2])]
 
-    if current_chunk:
-        chunks.append(current_chunk)
+    # Ensure each chunk is less than 500 tokens
+    chunks = [small_chunk for chunk in chunks for small_chunk in split_chunk(chunk)]
 
     return chunks
+
+
+
+def split_chunk(chunk):
+    """
+    Splits a chunk into smaller chunks if it has more than 500 tokens.
+
+    Parameters:
+    chunk (str): The chunk to split.
+
+    Returns:
+    list: A list of smaller chunks.
+    """
+    # Tokenize the chunk
+    tokens = chunk.split()
+
+    # If the chunk has less than or equal to 500 tokens, return it as it is
+    if len(tokens) <= 500:
+        return [chunk]
+
+    # If the chunk has more than 500 tokens, split it
+    smaller_chunks = []
+    for i in range(0, len(tokens), 500):
+        smaller_chunk = ' '.join(tokens[i : i+500])
+        smaller_chunks.append(smaller_chunk)
+
+    return smaller_chunks
+
 
 def main():
     """

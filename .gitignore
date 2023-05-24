@@ -1,1 +1,4 @@
 .env
+vector-db/embeddings.json
+vector-db/output.json
+vector-db/script.log

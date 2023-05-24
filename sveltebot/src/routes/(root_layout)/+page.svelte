@@ -4,3 +4,4 @@
 
 <h1>Welcome to the Chatbot App</h1>
 <button on:click={() => goto('/chatbot')}>Go to Chatbot</button>
+<button on:click={() => goto('/whisper-demo')}>Go to Whisper demo</button>

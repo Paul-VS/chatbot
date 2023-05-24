@@ -22,7 +22,9 @@
 	},
 	"type": "module",
 	"dependencies": {
+		"@ricky0123/vad-web": "^0.0.12",
 		"@supabase/supabase-js": "^2.21.0",
+		"@xenova/transformers": "^2.0.1",
 		"openai": "^3.2.1",
 		"showdown": "^2.1.0",
 		"supabase": "^1.55.1"

@@ -54,7 +54,7 @@ const matchEmbeddings = async (embedding) => {
 	const { error: matchError, data: pageSections } = await supabase.rpc('match_page_sections', {
 		embedding,
 		match_threshold: 0.78,
-		match_count: 10,
+		match_count: 3,
 		min_content_length: 100
 	});
 
@@ -78,7 +78,7 @@ export async function POST({ request }) {
 	}
 
 	// Extract message from request.
-	const { message, model } = await request.json();
+	const { message, model, chatHistory } = await request.json();
 	if (message.trim().length === 0) {
 		return json({ error: { message: 'Please enter a message' } }, 400);
 	}
@@ -99,17 +99,28 @@ export async function POST({ request }) {
 		return json(matchError, matchStatus);
 	}
 
-	// Append matched results from database to message.
-	const message_vdb =
-		message + '\n\n Extract from latest sveltekit docs: \n\n' + JSON.stringify(pageSections);
+	// Extract content from each matched section and format it as a string.
+	const pageSectionContents = pageSections.map((section) => `${section.content}`).join('\n');
 
-	console.log(`Sending message to OpenAI`);
+	// Append matched results from database to message.
+	const full_message =
+		'The current data in use: \n"""\n ' +
+		pageSectionContents +
+		'\n"""\n' +
+		'Here is the recent chat history for context:\n"""\n' +
+		chatHistory +
+		'\n"""\n' +
+		'The user is asking: \n"""\n' +
+		message +
+		'\n"""\n';
+
+	console.log(`Sending message to OpenAI: ${full_message}`);
 
 	try {
 		// Create chat completion with OpenAI.
 		const completion = await openai.createChatCompletion({
 			model: model,
-			messages: [{ role: 'user', content: message_vdb }]
+			messages: [{ role: 'user', content: full_message }]
 		});
 
 		// Extract bot message from response.

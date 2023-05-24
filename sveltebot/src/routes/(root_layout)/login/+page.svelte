@@ -27,7 +27,7 @@
 		if (signInError) {
 			error = signInError.message;
 		} else {
-			goto('/chatbot');
+			goto('/');
 		}
 
 		isLoading = false;
