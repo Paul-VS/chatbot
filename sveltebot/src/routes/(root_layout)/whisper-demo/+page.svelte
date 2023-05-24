@@ -1,15 +1,26 @@
 <script>
 	import { onMount } from 'svelte';
-	import { pipeline } from '@xenova/transformers';
 	import { MicVAD } from '@ricky0123/vad-web';
 
 	let spinning = false;
-	let transcriber = null;
+	let worker = undefined;
 	let transcript = '';
 
-	onMount(async () => {
-		transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
-	});
+	const loadWorker = async () => {
+		const TranscriberWorker = await import('$lib/transcribe.worker?worker');
+		worker = new TranscriberWorker.default();
+		if (worker) {
+			worker.postMessage({ command: 'init' });
+		}
+
+		worker.onmessage = function (event) {
+			if (event.data.status === 'transcribed') {
+				transcript += event.data.text;
+			}
+		};
+	};
+
+	onMount(loadWorker);
 
 	async function startVAD() {
 		const myvad = await MicVAD.new({
@@ -18,16 +29,10 @@
 			},
 			onSpeechEnd: async (audio) => {
 				spinning = false;
-
-				if (transcriber) {
-					let result = await transcriber(audio);
-					transcript += result.text;
-				} else {
-					console.log('Transcriber is not initialized yet.');
+				if (worker) {
+					worker.postMessage({ command: 'transcribe', audio });
 				}
 			}
-			// positiveSpeechThreshold: 0.8,
-			// negativeSpeechThreshold: 0.3
 		});
 
 		myvad.start();
